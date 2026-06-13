@@ -22,10 +22,15 @@
             <options>
                 <option label="30 seconds" value="30"/>
                 <option label="1 minute" value="60"/>
-                <option label="2 minutes" value="120" default="true"/>
+                <option label="2 minutes" value="120"/>
                 <option label="3 minutes" value="180"/>
                 <option label="4 minutes" value="240"/>
-                <option label="5 minutes" value="300"/>
+                <option label="5 minutes" value="300" default="true"/>
+                <option label="6 minutes" value="360"/>
+                <option label="7 minutes" value="420"/>
+                <option label="8 minutes" value="480"/>
+                <option label="9 minutes" value="540"/>
+                <option label="10 minutes" value="600"/>
             </options>
         </param>
         <param field="Mode2" label="Device name prefix" width="200px"/>
@@ -35,8 +40,9 @@
 import DomoticzEx as Domoticz
 import json
 import requests
+import time
 
-# 80, 50 = Temperature
+# 80, 5 = Temperature
 # 113, 0 = Counter
 # 242, 1 = Setpoint
 # 243, 6 = Percentage
@@ -89,7 +95,7 @@ RESPONSE_PROPERTIES={
     "pass"             :[36,  243, 19,  0, {}, 1, "Pass-through state", 0],
     "reverseState"     :[37,  243, 19,  0, {}, 1, "Reverse flow state", 0],
     "socStatus"        :[38,  243, 19,  0, {}, 1, "SOC calibration", 1],
-    "hyperTmp"         :[39,   80, 50,  0, {}, 1, "Enclosure temperature", 1],
+    "hyperTmp"         :[39,   80,  5,  0, {}, 1, "Enclosure temperature", 1],
     "dcStatus"         :[40,  243, 19,  0, {}, 1, "DC state", 0],
     "pvStatus"         :[41,  243, 19,  0, {}, 1, "PV state", 0],
     "acStatus"         :[42,  243, 19,  0, {}, 1, "AC state", 0],
@@ -157,7 +163,7 @@ RESPONSE_PACK_DATA={
     "state"            :[103, 243, 19,  0, {}, 1, "State", 1],
     "power"            :[104, 248,  1,  0, {}, 1, "Battery pack power", 0],
 # float maxTemp_C = (maxTemp - 2731) / 10.0;
-    "maxTemp"          :[105,  80, 50,  0, {}, 1, "Stored temperature value", 1],
+    "maxTemp"          :[105,  80,  5,  0, {}, 1, "Stored temperature value", 1],
     "totalVol"         :[106, 243,  8,  0, {}, 0.01, "Total voltage", 1],
 # Raw format: 16-bit two’s complement
 # Source container: uint8_t[3, 1]
@@ -185,6 +191,8 @@ class ZendurePlugin:
         self.prefix = str(Parameters["Mode2"])
         self.max_kwh = 0
         self.cur_kwh = 0
+        self.last_kwh = -1
+        self.last_time = -1
         self.in_kwh = 0
         self.out_kwh = 0
         self.soc = 0
@@ -316,8 +324,6 @@ class ZendurePlugin:
         self.version = str(response.get("version"))
 
         if response.get("properties") != None:
-            self.in_kwh = 0
-            self.out_kwh = 0
             self.charge = 0
             if response["properties"].get("heatState") != None:
                response["properties"].update({"heatState": "on" if response["properties"].get("heatState") else "off"})
@@ -344,14 +350,12 @@ class ZendurePlugin:
             if response["properties"].get("Fanspeed") != None:
                response["properties"].update({"Fanspeed": "normal" if response["properties"].get("Fanspeed") == 1 else
                                                           "fast" if response["properties"].get("Fanspeed") else "auto"})
-            if response["properties"].get("outputPackPower") != None:
-                self.in_kwh = float(response["properties"]["outputPackPower"]) / 1000
-            if response["properties"].get("packInputPower") != None:
-                self.out_kwh = float(response["properties"]["packInputPower"]) / 1000
             if response["properties"].get("outputPackPower") != None and response["properties"].get("packInputPower") != None:
                 self.charge = float(response["properties"]["outputPackPower"]) - float(response["properties"]["packInputPower"])
 
         if response.get("packData") != None:
+            self.in_kwh = 0
+            self.out_kwh = 0
             self.max_kwh = 0
             self.cur_kwh = 0
             self.soc = 0
@@ -379,6 +383,15 @@ class ZendurePlugin:
                     self.cur_kwh += kwh * float(response["packData"][pack]["socLevel"]) / 100
             if self.max_kwh != 0:
                 self.soc = self.cur_kwh / self.max_kwh * 100
+            cur_time = time.time()
+            if self.last_kwh >= 0:
+                delta = (self.cur_kwh - self.last_kwh) * 3600 / (cur_time - self.last_time)
+                if delta >= 0:
+                    self.in_kwh = delta
+                else:
+                    self.out_kwh = -delta
+            self.last_kwh = self.cur_kwh
+            self.last_time = cur_time
 
         for own in OWN_DEVICES:
             dev = OWN_DEVICES[own]
