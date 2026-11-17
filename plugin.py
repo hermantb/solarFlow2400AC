@@ -242,10 +242,6 @@ class ZendurePlugin:
         self.last_a_aprt_power = 1e30
         self.last_b_aprt_power = 1e30
         self.last_c_aprt_power = 1e30
-        # weather:
-        self.Latitude = 0
-        self.Longitude = 0
-        self.direct_radiation = []
 
         # Skip values that are not present in response message.
         # This allows maybe other devices then solarFlow2400AC+ to work.
@@ -397,6 +393,7 @@ class ZendurePlugin:
     def onHeartbeat(self):
         # Domoticz.Log("onHeartbeat called")
         if self.meter.strip() == '':
+            self.heartbeatCount += 1
             if self.busy and self.heartbeatCount < 5: # Wait some more if busy. Max 5 times
                 return
             else:
@@ -452,14 +449,6 @@ class ZendurePlugin:
                         enable = False
                         first = False
 
-                    # weather not used yet
-                    if False:
-                        ok, weather = self.weather_get()
-                        if ok:
-                            self.direct_radiation = []
-                            for i in range(len(weather["minutely_15"]["direct_radiation"])):
-                                self.direct_radiation.append(float(weather["minutely_15"]["direct_radiation"][i]))
-                            # Domoticz.Log("weather: " + str(self.direct_radiation))
                 elif hour != 0:
                     enable = True
 
@@ -702,15 +691,6 @@ class ZendurePlugin:
             self.power = self.last_a_aprt_power + self.last_b_aprt_power + self.last_c_aprt_power
             return ret
         return False
-
-    def weather_get(self):
-        try:
-            get_response = requests.get("http://api.open-meteo.com/v1/forecast?latitude=" + str(self.Latitude) + "&longitude=" + str(self.Longitude) + "&minutely_15=direct_radiation&timezone=auto&forecast_days=2", timeout=2)
-            response = json.loads(get_response.text)
-            return True, response 
-        except:     
-            print("Errors in getting Weather data. Check results.")
-            return False, ""
 
     def domoticz_get(self, request):
         try:
