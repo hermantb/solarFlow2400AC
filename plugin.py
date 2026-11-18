@@ -339,13 +339,6 @@ class ZendurePlugin:
             Domoticz.Log("Enever price feed " + ("not found." if self.enever == -1 else "found."))
 
         if self.meter.strip() != '':
-            # Get Latitude/Longitude for weather
-            ok, settings = self.domoticz_get("type=command&param=getsettings")
-            if ok: 
-                self.Latitude = settings["Location"]["Latitude"]
-                self.Longitude = settings["Location"]["Longitude"]
-                # Domoticz.Log("Latitude: " + str(self.Latitude) + ", Longitude: " + str(self.Longitude))
-
             self.zendure_start = 1
             self.zendure_sem = threading.Semaphore(value = 0)
             self.zendure_thread = threading.Thread(name="ZendureThread", target=self.zendure_thread)
@@ -400,8 +393,9 @@ class ZendurePlugin:
                 if self.heartbeatCount >= self.heartbeatWaits:
                     self.heartbeatCount = 0
                     self.busy = True
-                    result, response = self.zendure_get()
-                    if result:
+                    ok, response = self.zendure_get_battery(0)
+                    if ok:
+                        self.zendure_process(response)
                         self.zendure_update_all(response)
                     self.busy = False
 
@@ -412,9 +406,6 @@ class ZendurePlugin:
             alpha = 0.001
             background = 0
             last_time = time.time()
-            next_time = time.time()
-            self.min_index = -1
-            self.min_index_end = -1
             while True:
                 start_time = time.time()
                 now = time.localtime(start_time)
@@ -483,13 +474,6 @@ class ZendurePlugin:
                 time.sleep(delta if delta > 0 else 1)
         except Exception as err:
             Domoticz.Error("Zendure_thread exception: " + str(err))
-
-    def zendure_check_time(self, start, end, hour, minute):
-        return (start != -1 and start != end and 
-                hour >= int(start / 4) and
-                (hour != int(start / 4) or int((minute / (60 / 4))) >= (start % 4)) and
-                hour <= int(end / 4) and
-                (hour != int(end / 4) or int((minute / (60 / 4))) <= (end % 4)))
 
     def zendure_process(self, response):
         self.sn = str(response.get("sn"))
